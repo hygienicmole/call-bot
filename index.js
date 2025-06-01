@@ -15,7 +15,6 @@ const {
   TWILIO_PHONE_NUMBER,
 } = process.env;
 
-// Check for the required environment variables
 if (!ELEVENLABS_AGENT_ID || !TWILIO_ACCOUNT_SID || !TWILIO_AUTH_TOKEN || !TWILIO_PHONE_NUMBER) {
   console.error("Missing required environment variables");
   process.exit(1);
@@ -38,7 +37,6 @@ fastify.get("/", async (_, reply) => {
 
 // Route to handle incoming calls from Twilio
 fastify.all("/incoming-call-eleven", async (request, reply) => {
-  // Generate TwiML response to connect the call to a WebSocket stream
   const twimlResponse = `<?xml version="1.0" encoding="UTF-8"?>
     <Response>
       <Connect>
@@ -49,14 +47,13 @@ fastify.all("/incoming-call-eleven", async (request, reply) => {
   reply.type("text/xml").send(twimlResponse);
 });
 
-// WebSocket route for handling media streams from Twilio
+// WebSocket route
 fastify.register(async (fastifyInstance) => {
   fastifyInstance.get("/media-stream", { websocket: true }, (connection, req) => {
     console.info("[Server] Twilio connected to media stream.");
 
     let streamSid = null;
 
-    // Connect to ElevenLabs Conversational AI WebSocket
     const elevenLabsWs = new WebSocket(
       `wss://api.elevenlabs.io/v1/convai/conversation?agent_id=${ELEVENLABS_AGENT_ID}`
     );
@@ -104,11 +101,9 @@ fastify.register(async (fastifyInstance) => {
           break;
         case "ping":
           if (message.ping_event?.event_id) {
-            const pongResponse = {
-              type: "pong",
-              event_id: message.ping_event.event_id,
-            };
-            elevenLabsWs.send(JSON.stringify(pongResponse));
+            elevenLabsWs.send(
+              JSON.stringify({ type: "pong", event_id: message.ping_event.event_id })
+            );
           }
           break;
       }
@@ -124,10 +119,11 @@ fastify.register(async (fastifyInstance) => {
             break;
           case "media":
             if (elevenLabsWs.readyState === WebSocket.OPEN) {
-              const audioMessage = {
-                user_audio_chunk: Buffer.from(data.media.payload, "base64").toString("base64"),
-              };
-              elevenLabsWs.send(JSON.stringify(audioMessage));
+              elevenLabsWs.send(
+                JSON.stringify({
+                  user_audio_chunk: Buffer.from(data.media.payload, "base64").toString("base64"),
+                })
+              );
             }
             break;
           case "stop":
@@ -153,18 +149,17 @@ fastify.register(async (fastifyInstance) => {
   });
 });
 
-// Route to initiate an outbound call
+// Outbound call route
 fastify.post("/make-outbound-call", async (request, reply) => {
-  const { to } = request.body; // Destination phone number
-
+  const { to } = request.body;
   if (!to) {
     return reply.status(400).send({ error: "Destination phone number is required" });
   }
 
   try {
     const call = await twilioClient.calls.create({
-      url: `https://${request.headers.host}/incoming-call-eleven`, // Webhook for call handling
-      to: to,
+      url: `https://${request.headers.host}/incoming-call-eleven`,
+      to,
       from: TWILIO_PHONE_NUMBER,
     });
 
@@ -176,8 +171,8 @@ fastify.post("/make-outbound-call", async (request, reply) => {
   }
 });
 
-// Start the Fastify server
-fastify.listen({ port: PORT }, (err) => {
+// Start server with public binding
+fastify.listen({ port: PORT, host: "0.0.0.0" }, (err) => {
   if (err) {
     console.error("Error starting server:", err);
     process.exit(1);
